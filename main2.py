@@ -150,8 +150,89 @@ class Scheduler:
         next_task_touple = (next_job, next_task)
 
         return next_task_touple
+    
+
+    # Will generate a starting solution for simulated annealing
+    def generate_initial_solution(self) -> Tuple[List[int], List[List[int]]]:
+        operation_sequence: List[int] = []  # Will keep the order of the operations for the jobs (ex after we shuffle: [0, 1, 2, 1, 0, 1])
+        for job in self.jobs:
+            for _ in job.tasks:
+                operation_sequence.append(job.job_id)   # Here we just created smth like [0, 0, 1, 1, 1, 2]
+
+        random.shuffle(operation_sequence)              # And here we shuffle it for a random start sollution
+
+        machine_assignment: List[List[int]] = []    # A 2D list where machine_assignment[job_id][operation_index] gives the machine ID for that operation.
+                                                    # ex: [[0, 2], [1, 1, 0], [3]] Job 0: Operation 0 on Machine 0, Operation 1 on Machine 2 ...
+        for job in self.jobs:
+            job_assignment: List[int] = []          # Will create a list with the random picked machine id from the task list for every task and append it to the list
+            for task_list in job.tasks:             # We iterate through the task lists
+                chosen_machine = random.choice(task_list)           # We pick a random possible task(we can call it subtask) with it's macihine that can solve our main task
+                job_assignment.append(chosen_machine.machine_id)    # Append it's machine id in our list of machine id's for the job
+            machine_assignment.append(job_assignment)               # Append the machine id's for task to our machine assignment list for every job
+
+        return operation_sequence, machine_assignment               # Return both of them, the solution and associated machines
+    
+
+    # Will compute the makespan for the encoded operations array and machine assignments
+    def compute_makespan(self, operation_sequence: List[int], machine_assignment: List[List[int]]) -> int:
+        # Calculates the total completion time (makespan) for a given solution
+        self.reset_scheduler() # Clear any existing schedule
+        job_last_times: List[int] = [0] * len(self.jobs)        # When each job’s last operation finished, job_last_times[job_id] will give it to us
+        machine_times: List[int] = [0] * len(self.machines)     # When each machine becomes available, machine_times[machine_id] will give us the next available time
+        scheduled_tasks: List[int] = [0] * len(self.jobs)       # Number of operations scheduled per job, basically scheduled_tasks[job_id] will give us the index 
+                                                                # of the task of that needs to be executed for the current job
+
+        # We iterate through the solution with job ids
+        for job_id in operation_sequence:
+            if (scheduled_tasks[job_id] < len(self.jobs[job_id].tasks)):
+                task_index: int = scheduled_tasks[job_id]   # Next operation for this job
+                machine_id: int = machine_assignment[job_id][task_index]    # Assigned machine id for the current task of the job
+                job_task_list: List[Task] = self.jobs[job_id].tasks[task_index] # Possible tasks for this operation where we're gonna search the task with the machine_id
+
+                for task in job_task_list:                          # Iterate throu the curr task_list of the job to find the task with the needed machine id
+                    if (task.machine_id == machine_id):             # If we foun the task with the right machine if
+                        duration: int = task.duration
+                        # Start when both the machine and job are ready
+                        start_time: int = max(machine_times[machine_id], job_last_times[job_id])    # We pick the start time which is the max between the machine availability
+                                                                                            # and job last time, since we have to execute the previous tasks first
+                        end_time: int = start_time + duration       # We change the end time after completing the current task
+                        # Assign times to the task
+
+                        task.start_time = start_time    # We update the start time of the task because it's initially none      
+                        task.end_time = end_time        # We update the end time of the task because it's initially none
+                        break                           # We break because it should be executed only for the needed task
+                    
+                # Update machine and job availability
+                machine_times[machine_id] = end_time    # We update the time availability of the machine, we add the duration of the current task
+                job_last_times[job_id] = end_time       # We will update the last time in the job when it finished
+                self.machines[machine_id].add_to_schedule(job_id, start_time, end_time)     # We add the current task to machine's schedule
+                scheduled_tasks[job_id] += 1  # Move to the next operation for this job     # We move to the next operation for the current job
+
+        makespan: int = max(machine_times)  # Makespan is the latest machine finish time
+        self.global_max = makespan     # Update scheduler’s makespan
+        return makespan
+    
+    #This function will generate a neighbour solution based on the encoded provided one
+    def generate_neighbor(self, solution: Tuple[List[int], List[List[int]]]) -> Tuple[List[int], List[List[int]]]:
+        operation_sequence, machine_assignment = solution   # We separate the operation sequence and the maachines assigned
+        # Here we will decide if we swap two operations in the sequence or if we pick a different machine and task for a opperation
+        if random.random() < 0.5:
+            # Option 1: Swap two operations in the sequence
+            new_sequence = operation_sequence.copy()    # We make a copy of the current sequence
+            i, j = random.sample(range(len(new_sequence)), 2)   # Pick two random distinct positions from the new_sequence
+            new_sequence[i], new_sequence[j] = new_sequence[j], new_sequence[i]     # Swap the 2 positions so that we get a neighbour solution
+            return new_sequence, machine_assignment     # Return the solution tuple
+        else:
+            # Option 2: Change the machine for one operation
+            ####################### Continue writing the code here #########################
+
+            return new_sequence, machine_assignment     # Return the solution tuple
 
     def run(self, heuristic: str) -> None:
+        if(heuristic == 'SA'):
+            initial_solution = self.generate_initial_solution()
+            
+
         # Main scheduling loop - continues until all jobs are complete
         while any(not job.is_complete() for job in self.jobs): #do until all the jobs are completed
             # Get all available tasks sorted by the chosen heuristic
