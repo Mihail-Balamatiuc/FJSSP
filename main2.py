@@ -218,50 +218,96 @@ class Scheduler:
         # Here we will decide if we swap two operations in the sequence or if we pick a different machine and task for a opperation
         if random.random() < 0.5:
             # Option 1: Swap two operations in the sequence
-            new_sequence = operation_sequence.copy()    # We make a copy of the current sequence
+            new_sequence: List[int] = operation_sequence.copy()    # We make a copy of the current sequence
             i, j = random.sample(range(len(new_sequence)), 2)   # Pick two random distinct positions from the new_sequence
             new_sequence[i], new_sequence[j] = new_sequence[j], new_sequence[i]     # Swap the 2 positions so that we get a neighbour solution
             return new_sequence, machine_assignment     # Return the solution tuple
         else:
             # Option 2: Change the machine for one operation
-            ####################### Continue writing the code here #########################
+            new_machine_assignment: List[List[int]] = copy.deepcopy(machine_assignment)  # Deep copy of the machine_assignment array
 
-            return new_sequence, machine_assignment     # Return the solution tuple
+            limit: int = 0  # Will be the limit for search, in case there are no operations with multiple machine options to be found
+            for job in self.jobs:   # We are making the limit equal to the sum of number of operations of each job doubled
+                limit += len(job.tasks) * 2
+
+            while(limit > 0):
+                job_id = random.randint(0, len(self.jobs) - 1)      # Get a random job's index
+                task_index = random.randint(0, len(self.jobs[job_id].tasks) - 1)    # Get a andom operation's id from the selected job
+                task_list = self.jobs[job_id].tasks[task_index]     # Get the task list for the selected operation's index of the selecte job
+                if len(task_list) > 1:  # We make sure there’s a choice of machines
+                    current_machine = new_machine_assignment[job_id][task_index]    # We get the selected machine operation from our copy of the machine assignments
+                    # Get all other possible machines except the already selected one
+                    possible_machines = [task.machine_id for task in task_list if task.machine_id != current_machine]
+                    new_machine = random.choice(possible_machines)  # We pick a random machine from the other options we have
+                    new_machine_assignment[job_id][task_index] = new_machine    # We update the new machine for the operation in our new machine assignment
+                    break
+                limit -= 1
+
+            return operation_sequence, new_machine_assignment   # Return the solution tuple
+        
+    def simulated_annealing(self, initial_solution: Tuple[List[int], List[List[int]]], 
+                        initial_temperature: float = 1000, cooling_rate: float = 0.95, 
+                        min_temperature: float = 1, max_iterations: int = 10000) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+        # Optimizes the schedule using Simulated Annealing
+        current_solution: Tuple[List[int], List[List[int]]] = initial_solution                              # Start with the initial solution
+        current_makespan: int = self.compute_makespan(current_solution[0], current_solution[1])             # Evaluate it
+        best_solution: Tuple[List[int], List[List[int]]] = current_solution                                 # Track the best solution found
+        best_makespan: int = current_makespan    # Track its makespan
+        temperature: int = initial_temperature   # Start with a high temperature
+        iteration: int = 0                       # Count iterations
+
+        # We continue until temperature is low enough or max iterations reached
+        while temperature > min_temperature and iteration < max_iterations:
+            neighbor: Tuple[List[int], List[List[int]]] = self.generate_neighbor(current_solution)     # Create a new solution
+            neighbor_makespan: int = self.compute_makespan(*neighbor)    # Evaluate it
+            delta_E: int = neighbor_makespan - current_makespan          # Change in makespan
+            # Accept if better (negative delta) or with probability if worse
+            if delta_E < 0 or random.random() < math.exp(-delta_E / temperature):   
+                current_solution = neighbor
+                current_makespan = neighbor_makespan
+                # Update best solution if this one is better
+                if current_makespan < best_makespan:
+                    best_solution = current_solution
+                    best_makespan = current_makespan
+            temperature *= cooling_rate  # Cool down the temperature    
+            iteration += 1               # Increment iteration counter
+        self.compute_makespan(*best_solution)  # Apply the best solution
+        return best_solution, best_makespan    # Return the optimized solution and its makespan
 
     def run(self, heuristic: str) -> None:
-        if(heuristic == 'SA'):
+        # Executes the scheduling process based on the chosen heuristic
+        if heuristic == "SA":
+            # Use Simulated Annealing to optimize the schedule
             initial_solution = self.generate_initial_solution()
-            
-
+            best_solution, best_makespan = self.simulated_annealing(initial_solution)
+            return
+        
+        # Use dispatching rules for non heuristics
         # Main scheduling loop - continues until all jobs are complete
-        while any(not job.is_complete() for job in self.jobs): #do until all the jobs are completed
+        while any(not job.is_complete() for job in self.jobs): # do until all the jobs are completed
             # Get all available tasks sorted by the chosen heuristic
             if(heuristic == 'SPT'):
                 next_task_tuple: Optional[Tuple[Job, Task]] = self.shortest_processing_time()   # format: (job, task)
-            if(heuristic == 'LPT'):
-                next_task_tuple: Optional[Tuple[Job, Task]] = self.longest_processing_time()    # format: (job, task)   
-            if(heuristic == 'MWR'):
+            elif heuristic == 'LPT':
+                next_task_tuple: Optional[Tuple[Job, Task]] = self.longest_processing_time()    # format: (job, task)
+            elif heuristic == 'MWR':
                 next_task_tuple: Optional[Tuple[Job, Task]] = self.most_work_remaining()        # format: (job, task)
-            if(heuristic == 'LWR'):
-                next_task_tuple: Optional[Tuple[Job, Task]] = self.least_work_remaining()       # format: (job, task)    
-
-            #print(f'Job: {next_task_tuple[0].job_id},  Machine: {next_task_tuple[1].machine_id}, {next_task_tuple[1].duration}')
-            
-            if(len(self.machines[next_task_tuple[1].machine_id].schedule) > 0):
-                curr = self.machines[next_task_tuple[1].machine_id].schedule[-1] # format: (job_id, start_time, end_time)
-                self.machines[next_task_tuple[1].machine_id].add_to_schedule(next_task_tuple[0].job_id, curr[2], curr[2] + next_task_tuple[1].duration)
-                next_task_tuple[1].start_time = curr[2]
-                next_task_tuple[1].end_time = curr[2] + next_task_tuple[1].duration
-                self.global_max = max(self.global_max, next_task_tuple[1].end_time)
-
+            elif heuristic == 'LWR':
+                next_task_tuple: Optional[Tuple[Job, Task]] = self.least_work_remaining()       # format: (job, task)
             else:
-                self.machines[next_task_tuple[1].machine_id].add_to_schedule(next_task_tuple[0].job_id, 0, next_task_tuple[1].duration)
-                next_task_tuple[1].start_time = 0
-                next_task_tuple[1].end_time = next_task_tuple[1].duration
-                self.global_max = next_task_tuple[1].end_time
-
+                raise ValueError(f"Unknown heuristic: {heuristic}")
             
-            self.jobs[next_task_tuple[0].job_id].complete_task()
+            if next_task_tuple:
+                job, task = next_task_tuple
+                machine: Machine = self.machines[task.machine_id]
+                # Schedule the task at the earliest possible time
+                start = machine.schedule[-1][2] if machine.schedule else 0  # Get the end time of the last one or make it 0
+                end = start + task.duration                                 # Calculate the end time
+                machine.add_to_schedule(job.job_id, start, end)             # Add the task to needed machine's schedule
+                task.start_time = start                                     # Update Task's start time
+                task.end_time = end                                         # Update Task's end time
+                self.global_max = max(self.global_max, end)                 # Update global makespan if needed
+                job.complete_task()                                         # Mark the task as done           
 
             
     def print_machine_answer(self):
@@ -359,35 +405,21 @@ for i in range(machinesNr):
     machines.append(Machine(i))
 
 scheduler = Scheduler(allJobs, machines)
-scheduler.run('SPT')
-scheduler.print_job_answer()
-print(f'The total time is: {scheduler.get_makespan()}')
-scheduler.reset_scheduler()
 
-print()
+# Test all heuristics
+scheduler = Scheduler(allJobs, machines)
+for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA']:
+    scheduler.run(heuristic)
+    print(f"\nResults for {heuristic}:")
+    scheduler.print_job_answer()
+    print(f'The total time is: {scheduler.get_makespan()}')
+    scheduler.reset_scheduler()
 
-scheduler.run('LPT')
-scheduler.print_job_answer()
-print(f'The total time is: {scheduler.get_makespan()}')
-scheduler.reset_scheduler()
+#scheduler.display_work_remaining_arrays()
 
-print()
+###### To Do ###### 
+# Make the SA start with a dispaching rule solution on choice
 
-scheduler.run('MWR')
-scheduler.print_job_answer()
-print(f'The total time is: {scheduler.get_makespan()}')
-scheduler.reset_scheduler()
-
-print()
-
-scheduler.run('LWR')
-scheduler.print_job_answer()
-print(f'The total time is: {scheduler.get_makespan()}')
-scheduler.reset_scheduler()
-
-print()
-
-scheduler.display_work_remaining_arrays()
 
 # for curr_job in scheduler.jobs:
 #     for curr_task_set in curr_job.tasks:
