@@ -274,6 +274,52 @@ class Scheduler:
         self.compute_makespan(*best_solution)  # Apply the best solution
         return best_solution, best_makespan    # Return the optimized solution and its makespan
 
+    def hill_climbing(self, initial_solution: Tuple[List[int], List[List[int]]], 
+                      max_iterations: int = 1000) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+        # Start with a deep copy of the initial solution to avoid modifying the input
+        current_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(initial_solution)
+        current_makespan: int = self.compute_makespan(*current_solution)    # Compute the makespan of the current solution
+        # Initialize the best solution and its makespan
+        best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)
+        best_makespan: int = current_makespan
+        # Willrack the number of iterations
+        iteration: int = 0
+
+        # Flag to indicate if an improvement was found in this number of iterative checks
+        improved: int = 10  # We give 10 tries to find a better neighbour, if not found we consider the currens solution as local optimum
+
+        # Loop until max iterations are reached or no further improvement is possible
+        while iteration < max_iterations or not improved:
+            
+            # Generate a neighboring solution using the existing method
+            neighbor: Tuple[List[int], List[List[int]]] = self.generate_neighbor(current_solution)
+            
+            # Compute the makespan of the neighboring solution
+            neighbor_makespan: int = self.compute_makespan(*neighbor)
+            
+            # If the neighbor has a lower (better) makespan, move to it
+            if neighbor_makespan < current_makespan:
+                current_solution = copy.deepcopy(neighbor)
+                current_makespan = neighbor_makespan
+                # Update the best solution if this is the best makespan found so far
+                if current_makespan < best_makespan:
+                    best_solution = copy.deepcopy(current_solution)
+                    best_makespan = current_makespan
+                improved = True
+            else:      # If no improvement was found, exit the loop (local optimum reached)
+                improved -= 1
+            
+            # Increment the iteration counter
+            iteration += 1
+
+        # Apply the best solution to update the scheduler's internal state
+        self.compute_makespan(*best_solution)
+        
+        # Return the best solution and its makespan
+        return best_solution, best_makespan
+        
+    
+
     def run(self, heuristic: str) -> None:
         # Executes the scheduling process based on the chosen heuristic
         if heuristic == "SA":
@@ -281,7 +327,12 @@ class Scheduler:
             initial_solution = self.generate_initial_solution()
             best_solution, best_makespan = self.simulated_annealing(initial_solution)
             return
-        
+        elif heuristic == "HC":
+            # Generate an initial solution for Hill Climbing
+            initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
+            best_solution, best_makespan = self.hill_climbing(initial_solution)
+            return
+
         # Use dispatching rules for non heuristics
         # Main scheduling loop - continues until all jobs are complete
         while any(not job.is_complete() for job in self.jobs): # do until all the jobs are completed
@@ -408,7 +459,7 @@ scheduler = Scheduler(allJobs, machines)
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA']:
+for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC']:
     scheduler.run(heuristic)
     print(f"\nResults for {heuristic}:")
     scheduler.print_job_answer()
@@ -418,15 +469,9 @@ for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA']:
 #scheduler.display_work_remaining_arrays()
 
 ###### To Do ###### 
-# Make the SA start with a dispaching rule solution on choice
+# Make the Heuristics start with a dispaching rule solution on choice if needed
+# Implement Tabu search and some other algorithms
 
-
-# for curr_job in scheduler.jobs:
-#     for curr_task_set in curr_job.tasks:
-#         for curr_task in curr_task_set:
-#             curr_task.display_task()
-#         print()
-#     print()
 
 
 
