@@ -1,8 +1,11 @@
 import copy  # Used to create deep copies of objects to avoid modifying originals
 import os    # Not used in this code, but kept for potential file system operations
-from typing import List, Tuple, Optional, Dict  # For type hints to clarify data types
+from typing import Deque, List, Tuple, Optional, Dict  # For type hints to clarify data types
 import random  # For random number generation and shuffling in SA
 import math    # For the exponential function in SA acceptance probability
+from collections import deque
+import plotly.express as px
+import pandas as pd
 
 # Task class represents an individual operation that belongs to a job
 class Task:
@@ -33,10 +36,10 @@ class Job:
         self.tasks:List[List[Task]] = tasks             # List of Task objects for this job
         self.current_task_index: int = 0                # Tracks progress of the job (which task is next)
 
-    def get_next_task(self) -> Optional[List[Task]]:
+    def get_next_task_list(self) -> Optional[List[Task]]:
         # Returns the next task to be scheduled, or None if the job is complete
         if self.current_task_index < len(self.tasks):
-            return self.tasks[self.current_task_index] #returns a task which has machine, duration
+            return self.tasks[self.current_task_index] #returns a task_list with machines and durations
         return None
 
     def complete_task(self) -> None:
@@ -77,7 +80,7 @@ class Scheduler:
         next_task_touple: Optional[Tuple[Job, Task]] = None       
         for job in self.jobs:                           # We go throught jobs                 
             if (not job.is_complete()):                 # Check if it's completed (still has tasks)
-                curr_task_list: Optional[List[Task]] = job.get_next_task()    # Get it's next task list 
+                curr_task_list: Optional[List[Task]] = job.get_next_task_list()    # Get it's next task list 
                 if (curr_task_list is not None):        # Check if it's not empty
                     if(next_task_touple == None):              
                         next_task_touple = (job, curr_task_list[0]) #format: (job, task)
@@ -91,7 +94,7 @@ class Scheduler:
         next_task_touple = None       
         for job in self.jobs:                           # We go throught jobs                 
             if (not job.is_complete()):                 # Check if it's completed (still has tasks)
-                curr_task_list: Optional[List[Task]] = job.get_next_task()    # Get it's next task list 
+                curr_task_list: Optional[List[Task]] = job.get_next_task_list()    # Get it's next task list 
                 if (curr_task_list is not None):        # Check if it's not empty
                     if(next_task_touple == None):              
                         next_task_touple = (job, curr_task_list[0]) #format: (job, task)
@@ -113,7 +116,7 @@ class Scheduler:
                 work_remaining: int = self.work_remaining[job.job_id][job.current_task_index]   # keeps the remaining work
                 if(mx == None or work_remaining > mx):                                          # if mx is not initialized or we find a new max then we update
                     mx = self.work_remaining[job.job_id][job.current_task_index]
-                    next_task_list = job.get_next_task()
+                    next_task_list = job.get_next_task_list()
                     next_job = job
 
         # Here we pick the task with min duration from the task list
@@ -138,7 +141,7 @@ class Scheduler:
                 work_remaining: int = self.work_remaining[job.job_id][job.current_task_index]   # keeps the remaining work
                 if(mn == None or work_remaining < mn):                                          # if mx is not initialized or we find a new min then we update
                     mn = self.work_remaining[job.job_id][job.current_task_index]
-                    next_task_list = job.get_next_task()
+                    next_task_list = job.get_next_task_list()
                     next_job = job
 
         # Here we pick the task with min duration from the task list
@@ -318,7 +321,62 @@ class Scheduler:
         # Return the best solution and its makespan
         return best_solution, best_makespan
         
-    
+    # Tabu search which generates random solutions and the picks the better ones that are not in the tabu list (forbidden list)
+    # In this function we swap only the operations, we don't swap the possible machines for the operation
+    def tabu_search(self, initial_solution: Tuple[List[int], List[List[int]]], 
+                tabu_tenure: int = 5, max_iterations: int = 1000) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+        
+        current_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(initial_solution)   # This is the current encoded solution
+        current_makespan: int = self.compute_makespan(*current_solution)                        # We calculate the current makespan
+        best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)      # Keeping the best solution
+        best_makespan: int = current_makespan                                                   # Keeping the best makespan for the best solution
+        # Tabu list to store recent moves (tuples of sequences)
+        tabu_list: Deque[Tuple[List[int], List[int]]] = deque(maxlen=tabu_tenure)               # Tabu list with fixed size (will automatically eliminate when exceeded)
+
+        for iteration in range(max_iterations):
+            # Generate 10 neighbors
+            neighbors: List[Tuple[List[int], List[List[int]]]] = [self.generate_neighbor(current_solution) for _ in range(10)]
+
+            # Find the best non-tabu neighbor
+            best_neighbor: Optional[Tuple[List[int], List[List[int]]]] = None       # Will keep the best neighbour
+            best_neighbor_makespan: float = float('inf')                            # Best makespan initially is the maximum value bc we need to compute the minimum
+            best_move: Optional[Tuple[List[int], List[int]]] = None                 
+
+            # Iterate through the neighbours
+            for neighbor in neighbors:
+                neighbor_makespan: int = self.compute_makespan(*neighbor)           # Calculate their makespan
+                # Simplified move representation: tuple of operation sequences (before, after)
+                move: Tuple[List[int], List[int]] = (current_solution[0][:], neighbor[0][:])  # Only sequence for simplicity
+                # Check if move is allowed (not tabu or meets aspiration criteria)
+                if move not in tabu_list or neighbor_makespan < best_makespan:
+                    if neighbor_makespan < best_neighbor_makespan:
+                        best_neighbor = neighbor
+                        best_neighbor_makespan = float(neighbor_makespan)  # Convert to float for consistency
+                        best_move = move
+            
+            # If no valid move is found, terminate
+            if best_neighbor is None:
+                break
+
+            # Update current solution
+            current_solution = copy.deepcopy(best_neighbor)
+            current_makespan = int(best_neighbor_makespan)  # Convert back to int
+            
+            # Update best solution if improved
+            if current_makespan < best_makespan:
+                best_solution = copy.deepcopy(current_solution)
+                best_makespan = current_makespan
+            
+            # Add move to tabu list
+            tabu_list.append(best_move)
+
+            # Increment iteration
+            iteration += 1
+
+        # Apply the best solution and return
+        self.compute_makespan(*best_solution)
+        return best_solution, best_makespan
+
 
     def run(self, heuristic: str) -> None:
         # Executes the scheduling process based on the chosen heuristic
@@ -331,6 +389,11 @@ class Scheduler:
             # Generate an initial solution for Hill Climbing
             initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
             best_solution, best_makespan = self.hill_climbing(initial_solution)
+            return
+        elif heuristic == "TS":
+            # Generate an initial solution for Tabu Search
+            initial_solution = self.generate_initial_solution()
+            best_solution, best_makespan = self.tabu_search(initial_solution)
             return
 
         # Use dispatching rules for non heuristics
@@ -351,15 +414,17 @@ class Scheduler:
             if next_task_tuple:
                 job, task = next_task_tuple
                 machine: Machine = self.machines[task.machine_id]
-                # Schedule the task at the earliest possible time
-                start = machine.schedule[-1][2] if machine.schedule else 0  # Get the end time of the last one or make it 0
+                # Schedule the task at the earliest possible time for this machine
+                start = machine.schedule[-1][2] if machine.schedule else 0  # Get the end time of the last machine's task or make it 0
+                # Now we pick the max between the possible start time of the machine and the possible start time of the job (the possible
+                # start time of the job is after or equal to when it's previous task ended) because we need to satisfy both conditions
+                # Aici incearca sa verifici can a fost terminat ultimul task pt acest job
                 end = start + task.duration                                 # Calculate the end time
                 machine.add_to_schedule(job.job_id, start, end)             # Add the task to needed machine's schedule
                 task.start_time = start                                     # Update Task's start time
                 task.end_time = end                                         # Update Task's end time
                 self.global_max = max(self.global_max, end)                 # Update global makespan if needed
                 job.complete_task()                                         # Mark the task as done           
-
             
     def print_machine_answer(self):
         for machine in self.machines:
@@ -459,12 +524,52 @@ scheduler = Scheduler(allJobs, machines)
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC']:
+for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS']:
     scheduler.run(heuristic)
     print(f"\nResults for {heuristic}:")
     scheduler.print_job_answer()
     print(f'The total time is: {scheduler.get_makespan()}')
     scheduler.reset_scheduler()
+
+scheduler.run('TS')
+print(f"\nResults for TS:")
+scheduler.print_job_answer()
+print(f'The total time is: {scheduler.get_makespan()}')
+
+# Initialize an empty list to collect task data
+task_data = []
+
+# Collect task data into the list
+for job in scheduler.jobs:
+    for task_list in job.tasks:
+        for task in task_list:
+            if task.start_time is not None:  # Check for valid start time
+                task_data.append({
+                    'Task': 'Job ' + str(job.job_id),
+                    'Start': task.start_time,
+                    'Finish': task.end_time,
+                    'Machine': 'Machine' + str(task.machine_id)
+                })
+
+# Create DataFrame from the list of dictionaries
+df = pd.DataFrame(task_data)
+
+# Calculate duration
+df['Duration'] = df['Finish'] - df['Start']
+
+# Create Gantt-like chart with numerical ranges
+fig = px.bar(df, y="Machine", x="Duration", base="Start", orientation='h', color="Task")
+
+# Customize layout
+fig.update_layout(
+    xaxis_title="Time Units",
+    yaxis_title="Machines",
+    xaxis_range=[0, df['Finish'].max() + 1]
+)
+
+# Show the chart
+fig.show()
+
 
 #scheduler.display_work_remaining_arrays()
 
