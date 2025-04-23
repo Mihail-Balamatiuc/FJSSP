@@ -474,12 +474,19 @@ class Scheduler:
 
 
 #read from file
-allJobs = []    #will contain all the jobs with their tasks
-jobsNr = 0
-machinesNr = 0
-ind = 0         #Will keep the job Id nr
+#read from file
+allJobs: List[Job] = []  # Will contain all the jobs with their tasks
+jobsNr: int = 0          # Will contain the number of jobs
+machinesNr: int = 0      # Will contain the number of machines
+ind: int = 0             # Will keep the job Id nr
 
-with open('dataset2.txt', 'r') as file:
+# Here is the read function in github data set format which is the following:
+"""
+First line: <number of jobs> <number of machines>
+Then one line per job: <number of operations> and then, for each operation, <number of machines for this operation> and for each machine, a pair <machine> <processing time>.
+Machine index starts at 0.
+"""
+with open('dataset_github.txt', 'r') as file:
     #read by lines
     first = True
     for line in file:
@@ -489,36 +496,75 @@ with open('dataset2.txt', 'r') as file:
             jobsNr, machinesNr = int(elements[0]), int(elements[1])
             first = False
         else: #here we read the tasks for each job and create the jobs
-            isMachine = True
-            isDuration = False
-            add = []                                        #will keep the task list to be added
-            currTaskNumbers = []                            #will keep the current task's [machine, duration]
-            for element in elements:                        #we go through the elements of the job separated by space as strings
-                if(isMachine):          
-                    if(element[0] == '['):                  #if it's the first one we remove the bracket
-                        currTaskNumbers.append(int(element[1:]))
-                    else:
-                        currTaskNumbers.append(int(element))
-                    #We swap the element's type processing
-                    isMachine = False
-                    isDuration = True
-                else:
-                    if(element[len(element) - 1] == ']'):
-                        currTaskNumbers.append(int(element[:-1]))
-                        add.append(Task(currTaskNumbers[0], currTaskNumbers[1]))
-                        currTaskNumbers.clear()
-                        allTasks.append(copy.deepcopy(add))
-                        add.clear()
-                    else:
-                        currTaskNumbers.append(int(element))
-                        add.append(Task(currTaskNumbers[0], currTaskNumbers[1]))
-                        currTaskNumbers.clear()
-                    #We swap the element's type processing
-                    isMachine = True
-                    isDuration = False
+            elements: List[int] = [int(e) for e in elements]        # Convert all to integers
+            curr_index: int = 0                                     # The index of where we are in the number array
+            num_ops: int = elements[curr_index]                     # Will contain the number of operations for the current job
+            curr_index += 1                         
+            operations: List[List[Task]] = []                       # List of list of tasks
+
+            for op in range(num_ops):                               # Here we "iterate" through the operations, or until the range of operations
+                num_machines: int = elements[curr_index]            # Here we'll keep the number of machines
+                curr_index += 1
+                task_list: List[Task] = []                          # A list of task for the current operation's tasks
+                
+                for m in range(num_machines):                       # Here we "iterate" through the machines and their durations, or until the range of machines
+                    machine_id: int = elements[curr_index]          # First element of the pair is machine_id
+                    curr_index += 1                         
+                    processing_time: int = elements[curr_index]     # Second element of the pair is processing time
+                    curr_index += 1
+                    task: Task = Task(machine_id, processing_time)  # We create the task
+                    task_list.append(task)                          # We append it to the current operaion's task list
+                    
+                operations.append(task_list)                        # We append the current operation with it's task to our operation list for the current job
             
-            allJobs.append(Job(ind, allTasks))
-            ind += 1
+            allJobs.append(Job(ind, operations))                    # We create the job with it's index and it's operaion list
+            ind += 1                                                # We increase the job index
+
+
+## Here is the read function in my format ##
+
+# with open('dataset2.txt', 'r') as file:
+#     #read by lines
+#     first = True
+#     for line in file:
+#         allTasks = []# will keep all the tasks for a job before adding it to allJobs
+#         elements = line.split()
+#         if first: #we read the size of the problem JobsNr, MachinesNr
+#             jobsNr, machinesNr = int(elements[0]), int(elements[1])
+#             first = False
+#         else: #here we read the tasks for each job and create the jobs
+#             isMachine = True
+#             isDuration = False
+#             add = []                                        #will keep the task list to be added
+#             currTaskNumbers = []                            #will keep the current task's [machine, duration]
+#             for element in elements:                        #we go through the elements of the job separated by space as strings
+#                 if(isMachine):          
+#                     if(element[0] == '['):                  #if it's the first one we remove the bracket
+#                         currTaskNumbers.append(int(element[1:]))
+#                     else:
+#                         currTaskNumbers.append(int(element))
+#                     #We swap the element's type processing
+#                     isMachine = False
+#                     isDuration = True
+#                 else:
+#                     if(element[len(element) - 1] == ']'):
+#                         currTaskNumbers.append(int(element[:-1]))
+#                         add.append(Task(currTaskNumbers[0], currTaskNumbers[1]))
+#                         currTaskNumbers.clear()
+#                         allTasks.append(copy.deepcopy(add))
+#                         add.clear()
+#                     else:
+#                         currTaskNumbers.append(int(element))
+#                         add.append(Task(currTaskNumbers[0], currTaskNumbers[1]))
+#                         currTaskNumbers.clear()
+#                     #We swap the element's type processing
+#                     isMachine = True
+#                     isDuration = False
+            
+#             allJobs.append(Job(ind, allTasks))
+#             ind += 1
+
+## Here the read function for my format ends ##
 
 # Define machines
 machines = []
@@ -598,34 +644,3 @@ for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS']:
 
 
 #scheduler.display_work_remaining_arrays()
-
-###### To Do ###### 
-# Make the Heuristics start with a dispaching rule solution on choice if needed
-# Implement Tabu search and some other algorithms
-
-
-
-
-
-
-
-
-
-
-# [acelasi task pentru diferite masini]
-
-# planificarea trebuie reprezentata prin una sau mai multe liste
-
-# lista de indici de job-uri
-
-
-
-# [1 2 4 1 3 2 2 4 1] list of job ids, first apparition is first task in the job
-
-# -am o problema cu 4 job-uri, job-ul 1 din 3 operatii, 
-# -opartia 1 job 1
-# -operatia 2 job 2
-
-# -3 opratii pt job 1, pt ca de 3 ori apare 1
-
-# [5 3 1 2 4 3 5 1 2] the id of the machine where the task will be executed
