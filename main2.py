@@ -31,24 +31,25 @@ class Machine:
 
 # Job class represents a sequence of tasks that must be completed in order
 class Job:
-    def __init__(self, job_id: int, tasks: List[List[Task]]):       #the list objects are class Task
+    def __init__(self, job_id: int, operations: List[List[Task]]):       #the list objects are class Task
         self.job_id: int = job_id                       # Unique ID for the job
-        self.tasks:List[List[Task]] = tasks             # List of Task objects for this job
-        self.current_task_index: int = 0                # Tracks progress of the job (which task is next)
+        self.operations: List[List[Task]] = operations            # List of Task objects for this job we call it operations
+        self.current_operation_index: int = 0           # Tracks progress of the job (which task is next)
+        self.last_ending_time = 0                       # Will contain the last ending time of this job (ending time of the last executed operation)
 
     def get_next_task_list(self) -> Optional[List[Task]]:
         # Returns the next task to be scheduled, or None if the job is complete
-        if self.current_task_index < len(self.tasks):
-            return self.tasks[self.current_task_index] #returns a task_list with machines and durations
+        if self.current_operation_index < len(self.operations):
+            return self.operations[self.current_operation_index] #returns a task_list with machines and durations
         return None
 
-    def complete_task(self) -> None:
-        # Moves to the next task in the job sequence
-        self.current_task_index += 1
+    def complete_operation(self) -> None:
+        # Moves to the next operation in the job sequence
+        self.current_operation_index += 1
 
     def is_complete(self) -> bool:
         # Checks if all tasks in the job have been completed
-        return self.current_task_index >= len(self.tasks)
+        return self.current_operation_index >= len(self.operations)
     
 # Scheduler class manages the entire scheduling process
 class Scheduler:
@@ -65,7 +66,7 @@ class Scheduler:
         #we initialise the keys first
             self.work_remaining[job.job_id] = [0] #this is goint to be the 0 at the end
             sum: int = 0
-            for task_list in reversed(job.tasks):
+            for task_list in reversed(job.operations):
                 mn = task_list[0].duration
                 for task in task_list:
                     mn = min(mn, task.duration)
@@ -113,9 +114,9 @@ class Scheduler:
         mx = None                           # Tracks the current maximum remaining work
         for job in self.jobs:
             if(not job.is_complete()):
-                work_remaining: int = self.work_remaining[job.job_id][job.current_task_index]   # keeps the remaining work
+                work_remaining: int = self.work_remaining[job.job_id][job.current_operation_index]   # keeps the remaining work
                 if(mx == None or work_remaining > mx):                                          # if mx is not initialized or we find a new max then we update
-                    mx = self.work_remaining[job.job_id][job.current_task_index]
+                    mx = self.work_remaining[job.job_id][job.current_operation_index]
                     next_task_list = job.get_next_task_list()
                     next_job = job
 
@@ -138,9 +139,9 @@ class Scheduler:
         mn = None                           # Tracks the current minimum remaining work
         for job in self.jobs:
             if(not job.is_complete()):
-                work_remaining: int = self.work_remaining[job.job_id][job.current_task_index]   # keeps the remaining work
+                work_remaining: int = self.work_remaining[job.job_id][job.current_operation_index]   # keeps the remaining work
                 if(mn == None or work_remaining < mn):                                          # if mx is not initialized or we find a new min then we update
-                    mn = self.work_remaining[job.job_id][job.current_task_index]
+                    mn = self.work_remaining[job.job_id][job.current_operation_index]
                     next_task_list = job.get_next_task_list()
                     next_job = job
 
@@ -159,7 +160,7 @@ class Scheduler:
     def generate_initial_solution(self) -> Tuple[List[int], List[List[int]]]:
         operation_sequence: List[int] = []  # Will keep the order of the operations for the jobs (ex after we shuffle: [0, 1, 2, 1, 0, 1])
         for job in self.jobs:
-            for _ in job.tasks:
+            for _ in job.operations:
                 operation_sequence.append(job.job_id)   # Here we just created smth like [0, 0, 1, 1, 1, 2]
 
         random.shuffle(operation_sequence)              # And here we shuffle it for a random start sollution
@@ -168,7 +169,7 @@ class Scheduler:
                                                     # ex: [[0, 2], [1, 1, 0], [3]] Job 0: Operation 0 on Machine 0, Operation 1 on Machine 2 ...
         for job in self.jobs:
             job_assignment: List[int] = []          # Will create a list with the random picked machine id from the task list for every task and append it to the list
-            for task_list in job.tasks:             # We iterate through the task lists
+            for task_list in job.operations:             # We iterate through the task lists
                 chosen_machine = random.choice(task_list)           # We pick a random possible task(we can call it subtask) with it's macihine that can solve our main task
                 job_assignment.append(chosen_machine.machine_id)    # Append it's machine id in our list of machine id's for the job
             machine_assignment.append(job_assignment)               # Append the machine id's for task to our machine assignment list for every job
@@ -187,10 +188,10 @@ class Scheduler:
 
         # We iterate through the solution with job ids
         for job_id in operation_sequence:
-            if (scheduled_tasks[job_id] < len(self.jobs[job_id].tasks)):
+            if (scheduled_tasks[job_id] < len(self.jobs[job_id].operations)):
                 task_index: int = scheduled_tasks[job_id]   # Next operation for this job
                 machine_id: int = machine_assignment[job_id][task_index]    # Assigned machine id for the current task of the job
-                job_task_list: List[Task] = self.jobs[job_id].tasks[task_index] # Possible tasks for this operation where we're gonna search the task with the machine_id
+                job_task_list: List[Task] = self.jobs[job_id].operations[task_index] # Possible tasks for this operation where we're gonna search the task with the machine_id
 
                 for task in job_task_list:                          # Iterate throu the curr task_list of the job to find the task with the needed machine id
                     if (task.machine_id == machine_id):             # If we foun the task with the right machine if
@@ -231,12 +232,12 @@ class Scheduler:
 
             limit: int = 0  # Will be the limit for search, in case there are no operations with multiple machine options to be found
             for job in self.jobs:   # We are making the limit equal to the sum of number of operations of each job doubled
-                limit += len(job.tasks) * 2
+                limit += len(job.operations) * 2
 
             while(limit > 0):
                 job_id = random.randint(0, len(self.jobs) - 1)      # Get a random job's index
-                task_index = random.randint(0, len(self.jobs[job_id].tasks) - 1)    # Get a andom operation's id from the selected job
-                task_list = self.jobs[job_id].tasks[task_index]     # Get the task list for the selected operation's index of the selecte job
+                task_index = random.randint(0, len(self.jobs[job_id].operations) - 1)    # Get a andom operation's id from the selected job
+                task_list = self.jobs[job_id].operations[task_index]     # Get the task list for the selected operation's index of the selecte job
                 if len(task_list) > 1:  # We make sure there’s a choice of machines
                     current_machine = new_machine_assignment[job_id][task_index]    # We get the selected machine operation from our copy of the machine assignments
                     # Get all other possible machines except the already selected one
@@ -416,15 +417,18 @@ class Scheduler:
                 machine: Machine = self.machines[task.machine_id]
                 # Schedule the task at the earliest possible time for this machine
                 start = machine.schedule[-1][2] if machine.schedule else 0  # Get the end time of the last machine's task or make it 0
-                # Now we pick the max between the possible start time of the machine and the possible start time of the job (the possible
-                # start time of the job is after or equal to when it's previous task ended) because we need to satisfy both conditions
-                # Aici incearca sa verifici can a fost terminat ultimul task pt acest job
+
+                # Now we pick the max between the possible start time of the machine computed above and the possible start time of the job (the possible
+                #   start time of the job is more or equal to when it's previous operation ended) because we need to satisfy both conditions
+                start = max(start, job.last_ending_time)
+
                 end = start + task.duration                                 # Calculate the end time
                 machine.add_to_schedule(job.job_id, start, end)             # Add the task to needed machine's schedule
                 task.start_time = start                                     # Update Task's start time
                 task.end_time = end                                         # Update Task's end time
                 self.global_max = max(self.global_max, end)                 # Update global makespan if needed
-                job.complete_task()                                         # Mark the task as done           
+                job.last_ending_time = task.end_time                        # Update the job's last ending time
+                job.complete_operation()                                    # Mark the task as done
             
     def print_machine_answer(self):
         for machine in self.machines:
@@ -436,7 +440,7 @@ class Scheduler:
     def print_job_answer(self):
         for job in self.jobs:
             print(f'Job id: {job.job_id}')
-            for task_list in job.tasks:
+            for task_list in job.operations:
                 for task in task_list:
                     if(task.start_time != None):
                         print(f'Machine {task.machine_id}:  {task.start_time} -> {task.end_time}')
@@ -452,8 +456,9 @@ class Scheduler:
 
         #reset the jobs
         for job in self.jobs:
-            job.current_task_index = 0
-            for task_list in job.tasks:
+            job.current_operation_index = 0
+            job.last_ending_time = 0
+            for task_list in job.operations:
                 for task in task_list:
                     task.start_time = None
                     task.end_time = None
@@ -519,8 +524,19 @@ with open('dataset2.txt', 'r') as file:
 machines = []
 for i in range(machinesNr):
     machines.append(Machine(i))
-
+# We finally initialise the scheduler
 scheduler = Scheduler(allJobs, machines)
+
+# This is the dictionaire for the heuristic names
+heuristic_names = {
+    'SPT'   : 'Shortest Processing Time',
+    'LPT'   : 'Longest Processing Time',
+    'MWR'   : 'Most Work Remaining',
+    'LWR'   : 'Least Work Remaining',
+    'SA'    : 'Simulated Annealing',
+    'HC'    : 'Hill Climber',
+    'TS'    : 'Tabu Search' 
+}
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
@@ -529,46 +545,56 @@ for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS']:
     print(f"\nResults for {heuristic}:")
     scheduler.print_job_answer()
     print(f'The total time is: {scheduler.get_makespan()}')
+
+    ##### Here the plotting part starts #####
+
+    # Initialize an empty list to collect task data, will contain a list of dictionaires
+    task_data = []
+
+    # Collect task data into the list of dictionaires
+    for job in scheduler.jobs:
+        for task_list in job.operations:
+            for task in task_list:
+                if task.start_time is not None:  # Check for valid start time
+                    # Add a new dictionary into the list
+                    task_data.append({
+                        'Task': 'Job ' + str(job.job_id),
+                        'Start': task.start_time,
+                        'Finish': task.end_time,
+                        'Machine': 'Machine' + str(task.machine_id)
+                    })
+
+    # Create DataFrame from the list of dictionaries, the pd DataFrame table
+    df = pd.DataFrame(task_data)
+
+    # Calculate duration, adds a new 'Duration' column computed from Finish - Start from every column 
+    df['Duration'] = df['Finish'] - df['Start']
+
+    # Create Gantt-like chart with numerical ranges, this is the configuration for horizontal bars
+    fig = px.bar(df, y = "Machine", x = "Duration", base = "Start", orientation = 'h', color = "Task", 
+                custom_data = ['Task', 'Start', 'Finish', 'Duration'], title = f"Gantt Chart for {heuristic_names[heuristic]}")
+    # Above we use the custom data to ensure the data is taken directly from DataFrame to solve the Duration bug present in Plotly
+
+    # Here we update the hover info type for the bars
+    fig.update_traces(hovertemplate='Task: %{customdata[0]}<br>Machine: %{y}<br>Start: %{customdata[1]}<br>Finish: %{customdata[2]}<br>Duration: %{customdata[3]}')
+
+    #print(df)
+
+    # Customize layout
+    fig.update_layout(
+        xaxis_title="Time Units",
+        yaxis_title="Machines",
+        xaxis_range=[0, scheduler.get_makespan()],
+        title = f'{heuristic_names[heuristic]}'
+    )
+
+    # Show the chart
+    fig.show()
+
+    ##### Here the plotting part ends #####
+
+    # Here we reset the scheduler
     scheduler.reset_scheduler()
-
-scheduler.run('TS')
-print(f"\nResults for TS:")
-scheduler.print_job_answer()
-print(f'The total time is: {scheduler.get_makespan()}')
-
-# Initialize an empty list to collect task data
-task_data = []
-
-# Collect task data into the list
-for job in scheduler.jobs:
-    for task_list in job.tasks:
-        for task in task_list:
-            if task.start_time is not None:  # Check for valid start time
-                task_data.append({
-                    'Task': 'Job ' + str(job.job_id),
-                    'Start': task.start_time,
-                    'Finish': task.end_time,
-                    'Machine': 'Machine' + str(task.machine_id)
-                })
-
-# Create DataFrame from the list of dictionaries
-df = pd.DataFrame(task_data)
-
-# Calculate duration
-df['Duration'] = df['Finish'] - df['Start']
-
-# Create Gantt-like chart with numerical ranges
-fig = px.bar(df, y="Machine", x="Duration", base="Start", orientation='h', color="Task")
-
-# Customize layout
-fig.update_layout(
-    xaxis_title="Time Units",
-    yaxis_title="Machines",
-    xaxis_range=[0, df['Finish'].max() + 1]
-)
-
-# Show the chart
-fig.show()
 
 
 #scheduler.display_work_remaining_arrays()
