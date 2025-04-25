@@ -156,7 +156,7 @@ class Scheduler:
         return next_task_touple
     
 
-    # Will generate a starting solution for simulated annealing
+    # Will generate a starting solution for heuristics
     def generate_initial_solution(self) -> Tuple[List[int], List[List[int]]]:
         operation_sequence: List[int] = []  # Will keep the order of the operations for the jobs (ex after we shuffle: [0, 1, 2, 1, 0, 1])
         for job in self.jobs:
@@ -180,7 +180,7 @@ class Scheduler:
     # Will compute the makespan for the encoded operations array and machine assignments
     def compute_makespan(self, operation_sequence: List[int], machine_assignment: List[List[int]]) -> int:
         # Calculates the total completion time (makespan) for a given solution
-        self.reset_scheduler() # Clear any existing schedule
+        self.reset_scheduler() # Clear any existing schedule from previous computings
         job_last_times: List[int] = [0] * len(self.jobs)        # When each job’s last operation finished, job_last_times[job_id] will give it to us
         machine_times: List[int] = [0] * len(self.machines)     # When each machine becomes available, machine_times[machine_id] will give us the next available time
         scheduled_tasks: List[int] = [0] * len(self.jobs)       # Number of operations scheduled per job, basically scheduled_tasks[job_id] will give us the index 
@@ -189,22 +189,22 @@ class Scheduler:
         # We iterate through the solution with job ids
         for job_id in operation_sequence:
             if (scheduled_tasks[job_id] < len(self.jobs[job_id].operations)):
-                task_index: int = scheduled_tasks[job_id]   # Next operation for this job
-                machine_id: int = machine_assignment[job_id][task_index]    # Assigned machine id for the current task of the job
-                job_task_list: List[Task] = self.jobs[job_id].operations[task_index] # Possible tasks for this operation where we're gonna search the task with the machine_id
+                operation_index: int = scheduled_tasks[job_id]      # Next operation for this job
+                machine_id: int = machine_assignment[job_id][operation_index]       # Assigned machine id for the current operation of the job
+                operation_task_list: List[Task] = self.jobs[job_id].operations[operation_index]   # Possible tasks for this operation where we're gonna search the task with the machine_id
 
-                for task in job_task_list:                          # Iterate throu the curr task_list of the job to find the task with the needed machine id
-                    if (task.machine_id == machine_id):             # If we foun the task with the right machine if
+                for task in operation_task_list:                    # Iterate through the curr task_list of the job to find the task with the needed machine id
+                    if (task.machine_id == machine_id):             # If we foun the task with the right machine
                         duration: int = task.duration
                         # Start when both the machine and job are ready
                         start_time: int = max(machine_times[machine_id], job_last_times[job_id])    # We pick the start time which is the max between the machine availability
-                                                                                            # and job last time, since we have to execute the previous tasks first
+                                                                                                    # and job last time, since we have to execute the previous tasks first
                         end_time: int = start_time + duration       # We change the end time after completing the current task
                         # Assign times to the task
 
                         task.start_time = start_time    # We update the start time of the task because it's initially none      
                         task.end_time = end_time        # We update the end time of the task because it's initially none
-                        break                           # We break because it should be executed only for the needed task
+                        break                           # We break because it should be executed only for the needed task and then stop
                     
                 # Update machine and job availability
                 machine_times[machine_id] = end_time    # We update the time availability of the machine, we add the duration of the current task
@@ -231,7 +231,7 @@ class Scheduler:
             new_machine_assignment: List[List[int]] = copy.deepcopy(machine_assignment)  # Deep copy of the machine_assignment array
 
             limit: int = 0  # Will be the limit for search, in case there are no operations with multiple machine options to be found
-            for job in self.jobs:   # We are making the limit equal to the sum of number of operations of each job doubled
+            for job in self.jobs:   # We are making the limit equal to the sum of number of operations of each job doubled (not a rule, but I decided to just double)
                 limit += len(job.operations) * 2
 
             while(limit > 0):
@@ -346,8 +346,8 @@ class Scheduler:
             # Iterate through the neighbours
             for neighbor in neighbors:
                 neighbor_makespan: int = self.compute_makespan(*neighbor)           # Calculate their makespan
-                # Simplified move representation: tuple of operation sequences (before, after)
-                move: Tuple[List[int], List[int]] = (current_solution[0][:], neighbor[0][:])  # Only sequence for simplicity
+                # Simplified move representation: tuple of operation sequences (before, after), e.g. ([0, 1, 0, 1], [1, 0, 0, 1])
+                move: Tuple[List[int], List[int]] = (current_solution[0][:], neighbor[0][:])  # Only sequence for simplicity not machine list
                 # Check if move is allowed (not tabu or meets aspiration criteria)
                 if move not in tabu_list or neighbor_makespan < best_makespan:
                     if neighbor_makespan < best_neighbor_makespan:
@@ -355,7 +355,7 @@ class Scheduler:
                         best_neighbor_makespan = float(neighbor_makespan)  # Convert to float for consistency
                         best_move = move
             
-            # If no valid move is found, terminate
+            # If no valid move is found, terminate the loop
             if best_neighbor is None:
                 break
 
