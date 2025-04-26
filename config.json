@@ -1,16 +1,23 @@
 {
   "simulated_annealing": {
     "initial_temperature": 1000,
-    "cooling_rate": 0.95,
+    "cooling_rate": 0.98,
     "min_temperature": 1,
     "max_iterations": 10000
   },
   "hill_climbing": {
-    "max_iterations": 1000,
-    "improvement_tries": 10
+    "max_iterations": 10000,
+    "improvement_tries": 33
   },
   "tabu_search": {
-    "tabu_tenure": 5,
+    "tabu_tenure": 7,
     "max_iterations": 1000
+  },
+  "genetic_algorithm":{
+    "population_size": 100,
+    "num_generations": 100,
+    "crossover_rate": 0.8,
+    "mutation_rate": 0.1,
+    "tournament_size": 3
   }
 }

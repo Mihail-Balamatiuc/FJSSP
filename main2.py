@@ -1,3 +1,7 @@
+# -------------------------------
+# Imports
+# -------------------------------
+
 import copy  # Used to create deep copies of objects to avoid modifying originals
 import os    # Not used in this code, but kept for potential file system operations
 from typing import Deque, List, Tuple, Optional, Dict  # For type hints to clarify data types
@@ -9,6 +13,10 @@ import pandas as pd
 import json
 from types import SimpleNamespace
 from configModels import Config
+
+# -------------------------------
+# Configuration Loading
+# -------------------------------
 
 ### Getting the config data part ###
 # Function to recursively convert a dictionary to a SimpleNamespace object (We use it below for getting the config file)
@@ -46,6 +54,9 @@ except json.JSONDecodeError:
     raise
 ### End of getting the config data part ###
 
+# -------------------------------
+# Classes
+# -------------------------------
 
 # Task class represents an individual operation that belongs to a job
 class Task:
@@ -91,6 +102,10 @@ class Job:
         # Checks if all tasks in the job have been completed
         return self.current_operation_index >= len(self.operations)
     
+# -------------------------------
+# Scheduler (Core Logic)
+# -------------------------------
+
 # Scheduler class manages the entire scheduling process
 class Scheduler:
     def __init__(self, jobs: List[Job], machines: List[Machine]):
@@ -365,14 +380,12 @@ class Scheduler:
             # Increment the iteration counter
             iteration += 1
 
-        # Apply the best solution to update the scheduler's internal state
+        # Apply the best solution to update the scheduler and return it
         self.compute_makespan(*best_solution)
-        
-        # Return the best solution and its makespan
         return best_solution, best_makespan
         
     # Tabu search which generates random solutions and the picks the better ones that are not in the tabu list (forbidden list)
-    # In this function we swap only the operations, we don't swap the possible machines for the operation
+    # In this function we check the moves only by the operation sequence, we don't check the difference for the machines, to consume less time
     def tabu_search(self, 
                     initial_solution: Tuple[List[int], List[List[int]]], 
                     tabu_tenure: int = config.tabu_search.tabu_tenure, 
@@ -429,6 +442,144 @@ class Scheduler:
         # Apply the best solution and return
         self.compute_makespan(*best_solution)
         return best_solution, best_makespan
+    
+
+    # Here we implement the Genetic Algorithm heuristic
+    def genetic_algorithm(self,
+                          population_size: int = config.genetic_algorithm.population_size,
+                          num_generations: int = config.genetic_algorithm.num_generations,
+                          crossover_rate: float = config.genetic_algorithm.crossover_rate,
+                          mutation_rate: float = config.genetic_algorithm.mutation_rate,
+                          tournament_size: int = config.genetic_algorithm.tournament_size
+                          ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+        
+        
+        # Creates a population of solutions and evolves them over generations
+        # Initialize a population of random solutions initially
+        population: List[Tuple[List[int], List[List[int]]]] = [self.generate_initial_solution() for _ in range(population_size)]
+        
+        # Evaluate fitness (makespan) for each solutions
+        fitnesses: List[int] = [self.compute_makespan(*solution) for solution in population]
+        # Initially best solution will be the first generated solution
+        best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(population[0])  
+        best_makespan: int = fitnesses[0]
+        
+        # Compare and get the best solution from the existing ones
+        for ind in range(population_size):
+            if(fitnesses[ind] < best_makespan):
+                # Keep the best solution from all
+                best_solution = copy.deepcopy(population[ind])
+                best_makespan: int = fitnesses[ind]
+
+        # We repeat the proces num_generations times
+        for generation in range(num_generations):
+            # Initialize the new population
+            new_population: List[Tuple[List[int], List[List[int]]]] = []
+
+            # Elitism: Always carry over the best solution to the new population
+            new_population.append(copy.deepcopy(best_solution))
+
+            # Fill the new population with offspring (kids)
+            while len(new_population) < population_size:
+                # Tournament Selection: Select two parents
+                parent1: Tuple[List[int], List[List[int]]] = self.tournament(population, fitnesses, tournament_size)
+                parent2: Tuple[List[int], List[List[int]]] = self.tournament(population, fitnesses, tournament_size)
+
+                # Crossover: Produce a offspring(kid) from the 2 parents with probability crossover_rate
+                if(random.random() < crossover_rate):
+                    offspring: Tuple[List[int], List[List[int]]] = self.crossover(parent1, parent2)
+                else:
+                    if(self.compute_makespan(*parent1) < self.compute_makespan(*parent2)):
+                        offspring = parent1
+                    else:
+                        offspring = parent2
+
+                # Mutation: Apply mutation to offspring based on mutation_rate
+                if random.random() < mutation_rate:
+                    offspring = self.generate_neighbor(offspring)
+
+                # Add offspring to the new population
+                new_population.append(offspring)
+            
+            # Replace the old population with the new one
+            population = new_population
+            fitnesses = [self.compute_makespan(*solution) for solution in population]
+
+            # Check if there is a better solution, and if there is update the best solution
+            for ind in range(population_size):
+                if(fitnesses[ind] < best_makespan):
+                    # Keep the best solution from all
+                    best_solution = copy.deepcopy(population[ind])
+                    best_makespan: int = fitnesses[ind]
+        
+        # Apply the best solution to the scheduler and return it
+        self.compute_makespan(*best_solution)
+        return best_solution, best_makespan
+                    
+
+    # Function for making a new solution out of 2 parent solution for the Genetic Algorithm
+    def crossover(self, parent1: Tuple[List[int], List[List[int]]], 
+                  parent2: Tuple[List[int], List[List[int]]]) -> Tuple[List[int], List[List[int]]]:
+
+        operation_seq1, machine_assign1 = parent1
+        operation_seq2, machine_assign2 = parent2
+        # This dictionarry will keep count of the needed number of job indexes appearences in the operation sequence representation
+        # (e.g. [2, 1, 0, 0, 1, 0, 2, 2]) will keep {0 : 3, 1 : 2, 2 : 3} 
+        needed_count_dict: Dict = {}
+        for job_id in operation_seq1:
+            needed_count_dict[job_id] = needed_count_dict.get(job_id, 0) + 1
+
+        # Crossover for operation sequence (using one-point crossover), we pick a point in the sequence excluding ends end get the left side from the first parent
+        # and right part is build from the second parent
+        crossover_point: int = random.randint(1, len(operation_seq1) - 1)
+        # get the left from parent1
+        offspring_seq: List[int] = operation_seq1[:crossover_point]
+
+        offspring_count_dict: Dict = {}     # Will keep the current existing count
+        for job_id in offspring_seq:
+            offspring_count_dict[job_id] = offspring_count_dict.get(job_id, 0) + 1
+
+        # Here we build the second part by adding the missing operations(job_id counts) in the order they appear in the second parent's sequence
+        for job_id in operation_seq2:
+            if offspring_count_dict.get(job_id, 0) < needed_count_dict.get(job_id):
+                offspring_count_dict[job_id] = offspring_count_dict.get(job_id, 0) + 1
+                offspring_seq.append(job_id)
+
+        offspring_machine_assign: List[List[int]] = []
+        # Now we're gonna do the crossover for the machines by picking the machines randomly either from the first or second parent
+        for job_id in range(len(machine_assign1)):
+            assign1 = machine_assign1[job_id]
+            assign2 = machine_assign2[job_id]
+            offspring_assign = []
+            for operation_index in range(len(assign1)):
+                # less we pick from first parent else from the second
+                if random.random() < 0.5:
+                    offspring_assign.append(assign1[operation_index])
+                else:
+                    offspring_assign.append(assign2[operation_index])
+            offspring_machine_assign.append(offspring_assign)
+
+        return (offspring_seq, offspring_machine_assign)
+
+
+    # Tournament function for Genetic Algorithm, will pick randomly some contestants and return the best one as a parent
+    def tournament(self, population: List[Tuple[List[int], List[List[int]]]], 
+                   fitnesses: List[int], tournament_size: int) -> Tuple[List[int], List[List[int]]]:
+        
+        # Here we get tournaments size amount of random indexes from the length of the population
+        tournament_indices: List[int] = random.sample(range(len(population)), tournament_size)
+
+        # Initially pick the first one
+        best_solution_index = tournament_indices[0]
+
+        # Determine the best solution (the one with the best fitness (makespan))
+        for ind in tournament_indices:
+            if (fitnesses[ind] < fitnesses[best_solution_index]):
+                best_solution_index = ind
+
+        # Return the best one as a parent
+        return copy.deepcopy(population[best_solution_index])   
+
 
 
     def run(self, heuristic: str) -> None:
@@ -447,6 +598,9 @@ class Scheduler:
             # Generate an initial solution for Tabu Search
             initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
             best_solution, best_makespan = self.tabu_search(initial_solution)
+            return
+        elif heuristic == "GA":
+            best_solution, best_makespan = self.genetic_algorithm()
             return
 
         # Use dispatching rules for non heuristics
@@ -524,8 +678,10 @@ class Scheduler:
             print(value)
             print()
 
+# ---------------------------------
+# Data Reading and object creation
+# ---------------------------------
 
-#read from file
 #read from file
 allJobs: List[Job] = []  # Will contain all the jobs with their tasks
 jobsNr: int = 0          # Will contain the number of jobs
@@ -573,7 +729,7 @@ with open('dataset_github.txt', 'r') as file:
             ind += 1                                                # We increase the job index
 
 
-## Here is the read function in my format ##
+## Here is the read function for my format ##
 
 # with open('dataset2.txt', 'r') as file:
 #     #read by lines
@@ -633,12 +789,17 @@ heuristic_names = {
     'LWR'   : 'Least Work Remaining',
     'SA'    : 'Simulated Annealing',
     'HC'    : 'Hill Climber',
-    'TS'    : 'Tabu Search' 
+    'TS'    : 'Tabu Search',
+    'GA'    : 'Genetic Algorithm'
 }
+
+# -------------------------------
+# Main Execution and Visualization
+# -------------------------------
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS']:
+for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS', 'GA']:
     scheduler.run(heuristic)
     print(f"\nResults for {heuristic}:")
     scheduler.print_job_answer()
