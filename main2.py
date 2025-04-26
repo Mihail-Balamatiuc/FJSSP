@@ -6,6 +6,46 @@ import math    # For the exponential function in SA acceptance probability
 from collections import deque
 import plotly.express as px
 import pandas as pd
+import json
+from types import SimpleNamespace
+from configModels import Config
+
+### Getting the config data part ###
+# Function to recursively convert a dictionary to a SimpleNamespace object (We use it below for getting the config file)
+def convert_to_namespace(data):
+    # Check if the input is a dictionary
+    if isinstance(data, dict):
+        # Create a new dictionary where each value is recursively converted
+        converted_dict: Dict = {}
+        for key, value in data.items():
+            # Recursively convert the value (could be another dict, list, or primitive)
+            converted_dict[key] = convert_to_namespace(value)
+        # Return a SimpleNamespace object with the converted dictionary
+        return SimpleNamespace(**converted_dict)
+    
+    # If the input is not a dictionary, return it unchanged
+    return data
+
+# Load the configuration from the JSON file
+try:
+    # Open the config.json file in read mode
+    with open('config.json', 'r') as config_file:
+        # Parse the JSON file into a Python dictionary
+        config_dict = json.load(config_file)
+    
+    # Convert the dictionary to a SimpleNamespace object for dot notation
+    config: Config = convert_to_namespace(config_dict)
+
+except FileNotFoundError:
+    # Handle case where the config file is missing
+    print("Error: The file 'config.json' was not found.")
+    raise
+except json.JSONDecodeError:
+    # Handle case where the JSON file is invalid
+    print("Error: The 'config.json' file contains invalid JSON.")
+    raise
+### End of getting the config data part ###
+
 
 # Task class represents an individual operation that belongs to a job
 class Task:
@@ -249,9 +289,14 @@ class Scheduler:
 
             return operation_sequence, new_machine_assignment   # Return the solution tuple
         
-    def simulated_annealing(self, initial_solution: Tuple[List[int], List[List[int]]], 
-                        initial_temperature: float = 1000, cooling_rate: float = 0.95, 
-                        min_temperature: float = 1, max_iterations: int = 10000) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+    def simulated_annealing(self, 
+                            initial_solution: Tuple[List[int], List[List[int]]], 
+                            initial_temperature: float = config.simulated_annealing.initial_temperature, 
+                            cooling_rate: float = config.simulated_annealing.cooling_rate, 
+                            min_temperature: float = config.simulated_annealing.min_temperature, 
+                            max_iterations: int = config.simulated_annealing.max_iterations
+                            ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+                            
         # Optimizes the schedule using Simulated Annealing
         current_solution: Tuple[List[int], List[List[int]]] = initial_solution                              # Start with the initial solution
         current_makespan: int = self.compute_makespan(current_solution[0], current_solution[1])             # Evaluate it
@@ -278,8 +323,12 @@ class Scheduler:
         self.compute_makespan(*best_solution)  # Apply the best solution
         return best_solution, best_makespan    # Return the optimized solution and its makespan
 
-    def hill_climbing(self, initial_solution: Tuple[List[int], List[List[int]]], 
-                      max_iterations: int = 1000) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+    def hill_climbing(self, 
+                      initial_solution: Tuple[List[int], List[List[int]]], 
+                      improvement_tries: int = config.hill_climbing.improvement_tries,
+                      max_iterations: int = config.hill_climbing.max_iterations
+                      ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+        
         # Start with a deep copy of the initial solution to avoid modifying the input
         current_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(initial_solution)
         current_makespan: int = self.compute_makespan(*current_solution)    # Compute the makespan of the current solution
@@ -290,10 +339,10 @@ class Scheduler:
         iteration: int = 0
 
         # Flag to indicate if an improvement was found in this number of iterative checks
-        improved: int = 10  # We give 10 tries to find a better neighbour, if not found we consider the currens solution as local optimum
+        improvement_attempts: int = improvement_tries  # We give 10 tries to find a better neighbour, if not found we consider the currens solution as local optimum
 
         # Loop until max iterations are reached or no further improvement is possible
-        while iteration < max_iterations or not improved:
+        while iteration < max_iterations or not improvement_attempts:
             
             # Generate a neighboring solution using the existing method
             neighbor: Tuple[List[int], List[List[int]]] = self.generate_neighbor(current_solution)
@@ -309,9 +358,9 @@ class Scheduler:
                 if current_makespan < best_makespan:
                     best_solution = copy.deepcopy(current_solution)
                     best_makespan = current_makespan
-                improved = True
+                improvement_attempts = True
             else:      # If no improvement was found, exit the loop (local optimum reached)
-                improved -= 1
+                improvement_attempts -= 1
             
             # Increment the iteration counter
             iteration += 1
@@ -324,15 +373,18 @@ class Scheduler:
         
     # Tabu search which generates random solutions and the picks the better ones that are not in the tabu list (forbidden list)
     # In this function we swap only the operations, we don't swap the possible machines for the operation
-    def tabu_search(self, initial_solution: Tuple[List[int], List[List[int]]], 
-                tabu_tenure: int = 5, max_iterations: int = 1000) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+    def tabu_search(self, 
+                    initial_solution: Tuple[List[int], List[List[int]]], 
+                    tabu_tenure: int = config.tabu_search.tabu_tenure, 
+                    max_iterations: int = config.tabu_search.max_iterations
+                    ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
         
         current_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(initial_solution)   # This is the current encoded solution
         current_makespan: int = self.compute_makespan(*current_solution)                        # We calculate the current makespan
         best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)      # Keeping the best solution
         best_makespan: int = current_makespan                                                   # Keeping the best makespan for the best solution
         # Tabu list to store recent moves (tuples of sequences)
-        tabu_list: Deque[Tuple[List[int], List[int]]] = deque(maxlen=tabu_tenure)               # Tabu list with fixed size (will automatically eliminate when exceeded)
+        tabu_list: Deque[Tuple[List[int], List[int]]] = deque(maxlen = tabu_tenure)             # Tabu list with fixed size (will automatically eliminate when exceeded)
 
         for iteration in range(max_iterations):
             # Generate 10 neighbors
@@ -383,7 +435,7 @@ class Scheduler:
         # Executes the scheduling process based on the chosen heuristic
         if heuristic == "SA":
             # Use Simulated Annealing to optimize the schedule
-            initial_solution = self.generate_initial_solution()
+            initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
             best_solution, best_makespan = self.simulated_annealing(initial_solution)
             return
         elif heuristic == "HC":
@@ -393,7 +445,7 @@ class Scheduler:
             return
         elif heuristic == "TS":
             # Generate an initial solution for Tabu Search
-            initial_solution = self.generate_initial_solution()
+            initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
             best_solution, best_makespan = self.tabu_search(initial_solution)
             return
 
