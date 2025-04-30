@@ -13,11 +13,11 @@
     "tabu_tenure": 7,
     "max_iterations": 1000
   },
-  "genetic_algorithm":{
-    "population_size": 100,
-    "num_generations": 100,
-    "crossover_rate": 0.8,
-    "mutation_rate": 0.1,
+  "genetic_algorithm": {
+    "population_size": 50,
+    "num_generations": 90,
+    "crossover_rate": 0.7,
+    "mutation_rate": 0.15,
     "tournament_size": 3
   }
 }
