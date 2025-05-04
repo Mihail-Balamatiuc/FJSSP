@@ -8,6 +8,8 @@ class SimulatedAnnealingConfig:
 class HillClimbingConfig:
     max_iterations: int
     improvement_tries: int
+    restarts: int
+    neighbors_number: int
 
 class TabuSearchConfig:
     tabu_tenure: int
@@ -20,8 +22,14 @@ class GeneticAlgorithmConfig:
     mutation_rate: float
     tournament_size: int
 
+class IteratedLocalSearch:
+    max_iterations: int
+    perturbation_strength: int
+    improvement_tries: int
+
 class Config:
     simulated_annealing: SimulatedAnnealingConfig
     hill_climbing: HillClimbingConfig
     tabu_search: TabuSearchConfig
     genetic_algorithm: GeneticAlgorithmConfig
+    iterated_local_search: IteratedLocalSearch

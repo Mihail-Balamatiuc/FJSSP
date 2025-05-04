@@ -1,7 +1,3 @@
-# -------------------------------
-# Imports
-# -------------------------------
-
 import copy  # Used to create deep copies of objects to avoid modifying originals
 import os    # Not used in this code, but kept for potential file system operations
 from typing import Deque, List, Tuple, Optional, Dict  # For type hints to clarify data types
@@ -15,9 +11,9 @@ from types import SimpleNamespace
 from configModels import Config
 import matplotlib.pyplot as plt
 
-# -------------------------------
-# Configuration Loading
-# -------------------------------
+#############################
+### Configuration Loading ###
+#############################
 
 ### Getting the config data part ###
 # Function to recursively convert a dictionary to a SimpleNamespace object (We use it below for getting the config file)
@@ -55,9 +51,9 @@ except json.JSONDecodeError:
     raise
 ### End of getting the config data part ###
 
-# -------------------------------
-# Classes
-# -------------------------------
+###############
+### Classes ###
+###############
 
 # Task class represents an individual operation that belongs to a job
 class Task:
@@ -103,9 +99,9 @@ class Job:
         # Checks if all tasks in the job have been completed
         return self.current_operation_index >= len(self.operations)
     
-# -------------------------------
-# Scheduler (Core Logic)
-# -------------------------------
+##############################
+### Scheduler (Core Logic) ###
+##############################
 
 # Scheduler class manages the entire scheduling process
 class Scheduler:
@@ -233,7 +229,7 @@ class Scheduler:
         return operation_sequence, machine_assignment               # Return both of them, the solution and associated machines
     
 
-    # Will compute the makespan for the encoded operations array and machine assignments
+    # Will compute the makespan for the encoded operations array and machine assignments and it also updates the scheduler with the computed solution
     def compute_makespan(self, operation_sequence: List[int], machine_assignment: List[List[int]]) -> int:
         # Calculates the total completion time (makespan) for a given solution
         self.reset_scheduler() # Clear any existing schedule from previous computings
@@ -274,7 +270,7 @@ class Scheduler:
     
     #This function will generate a neighbour solution based on the encoded provided one
     def generate_neighbor(self, solution: Tuple[List[int], List[List[int]]]) -> Tuple[List[int], List[List[int]]]:
-        operation_sequence, machine_assignment = solution   # We separate the operation sequence and the maachines assigned
+        operation_sequence, machine_assignment = copy.deepcopy(solution)   # We separate the operation sequence and the maachines assigned
         # Here we will decide if we swap two operations in the sequence or if we pick a different machine and task for a opperation
         if random.random() < 0.5:
             # Option 1: Swap two operations in the sequence
@@ -292,21 +288,20 @@ class Scheduler:
 
             while(limit > 0):
                 job_id = random.randint(0, len(self.jobs) - 1)      # Get a random job's index
-                task_index = random.randint(0, len(self.jobs[job_id].operations) - 1)    # Get a andom operation's id from the selected job
-                task_list = self.jobs[job_id].operations[task_index]     # Get the task list for the selected operation's index of the selecte job
+                operation_index = random.randint(0, len(self.jobs[job_id].operations) - 1)  # Get a andom operation's id from the selected job
+                task_list = self.jobs[job_id].operations[operation_index]     # Get the task list for the selected operation's index of the selecte job
                 if len(task_list) > 1:  # We make sure there’s a choice of machines
-                    current_machine = new_machine_assignment[job_id][task_index]    # We get the selected machine operation from our copy of the machine assignments
+                    current_machine = new_machine_assignment[job_id][operation_index]    # We get the selected machine operation from our copy of the machine assignments
                     # Get all other possible machines except the already selected one
                     possible_machines = [task.machine_id for task in task_list if task.machine_id != current_machine]
                     new_machine = random.choice(possible_machines)  # We pick a random machine from the other options we have
-                    new_machine_assignment[job_id][task_index] = new_machine    # We update the new machine for the operation in our new machine assignment
+                    new_machine_assignment[job_id][operation_index] = new_machine    # We update the new machine for the operation in our new machine assignment
                     break
                 limit -= 1
 
             return operation_sequence, new_machine_assignment   # Return the solution tuple
         
-    def simulated_annealing(self, 
-                            initial_solution: Tuple[List[int], List[List[int]]], 
+    def simulated_annealing(self,
                             initial_temperature: float = config.simulated_annealing.initial_temperature, 
                             cooling_rate: float = config.simulated_annealing.cooling_rate, 
                             min_temperature: float = config.simulated_annealing.min_temperature, 
@@ -314,7 +309,7 @@ class Scheduler:
                             ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
                             
         # Optimizes the schedule using Simulated Annealing
-        current_solution: Tuple[List[int], List[List[int]]] = initial_solution                              # Start with the initial solution
+        current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
         current_makespan: int = self.compute_makespan(current_solution[0], current_solution[1])             # Evaluate it
         best_solution: Tuple[List[int], List[List[int]]] = current_solution                                 # Track the best solution found
         best_makespan: int = current_makespan    # Track its makespan
@@ -327,7 +322,7 @@ class Scheduler:
             neighbor_makespan: int = self.compute_makespan(*neighbor)    # Evaluate it
             delta_E: int = neighbor_makespan - current_makespan          # Change in makespan
             # Accept if better (negative delta) or with probability if worse
-            if delta_E < 0 or random.random() < math.exp(-delta_E / temperature):   
+            if delta_E < 0 or random.random() < math.exp(-delta_E / (temperature * current_makespan)):  
                 current_solution = neighbor
                 current_makespan = neighbor_makespan
                 # Update best solution if this one is better
@@ -339,61 +334,62 @@ class Scheduler:
         self.compute_makespan(*best_solution)  # Apply the best solution
         return best_solution, best_makespan    # Return the optimized solution and its makespan
 
+    # Improved Hill Climbing heuristic
     def hill_climbing(self, 
-                      initial_solution: Tuple[List[int], List[List[int]]], 
                       improvement_tries: int = config.hill_climbing.improvement_tries,
-                      max_iterations: int = config.hill_climbing.max_iterations
+                      max_iterations: int = config.hill_climbing.max_iterations,
+                      restarts: int = config.hill_climbing.restarts
                       ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
         
-        # Start with a deep copy of the initial solution to avoid modifying the input
-        current_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(initial_solution)
-        current_makespan: int = self.compute_makespan(*current_solution)    # Compute the makespan of the current solution
         # Initialize the best solution and its makespan
-        best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)
-        best_makespan: int = current_makespan
-        # Willrack the number of iterations
-        iteration: int = 0
+        best_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
+        best_makespan: int = self.compute_makespan(*best_solution)
 
-        # Flag to indicate if an improvement was found in this number of iterative checks
-        improvement_attempts: int = improvement_tries  # We give 10 tries to find a better neighbour, if not found we consider the currens solution as local optimum
+        # We'll do restart tries
+        for i in range(restarts):
+            current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
+            current_makespan: int = self.compute_makespan(*current_solution)    # Compute the makespan of the current solution
+            
+            improvement_attempts: int = improvement_tries  # We give tries to find a better neighbour, if not found we consider the currens solution as local optimum
+            # We iterate till the max or as long as we get improvements
+            for j in range(max_iterations):
+                if improvement_attempts == 0:
+                    break
+                # We generate some random list of neighbours and their makespans
+                neighbors: List[Tuple[List[int], List[List[int]]]] = [self.generate_neighbor(current_solution) for _ in range(config.hill_climbing.neighbors_number)]
+                neighbor_makespans = [self.compute_makespan(*neigh) for neigh in neighbors]
+                # We determine the best solution
+                neighbors_best_solution: Tuple[List[int], List[List[int]]] = neighbors[0]
+                neighbors_best_makespan: int = neighbor_makespans[0]
+                for index in range(len(neighbor_makespans)):
+                    if(neighbor_makespans[index] < neighbors_best_makespan):
+                        neighbors_best_makespan = neighbor_makespans[index]
+                        neighbors_best_solution = neighbors[index]
 
-        # Loop until max iterations are reached or no further improvement is possible
-        while iteration < max_iterations or not improvement_attempts:
+                # Check if we got an improvement
+                if neighbors_best_makespan < current_makespan:
+                    current_solution = copy.deepcopy(neighbors_best_solution)
+                    current_makespan = neighbors_best_makespan
+                else:
+                    improvement_attempts -= 1
             
-            # Generate a neighboring solution using the existing method
-            neighbor: Tuple[List[int], List[List[int]]] = self.generate_neighbor(current_solution)
-            
-            # Compute the makespan of the neighboring solution
-            neighbor_makespan: int = self.compute_makespan(*neighbor)
-            
-            # If the neighbor has a lower (better) makespan, move to it
-            if neighbor_makespan < current_makespan:
-                current_solution = copy.deepcopy(neighbor)
-                current_makespan = neighbor_makespan
-                # Update the best solution if this is the best makespan found so far
-                if current_makespan < best_makespan:
-                    best_solution = copy.deepcopy(current_solution)
-                    best_makespan = current_makespan
-                improvement_attempts = True
-            else:      # If no improvement was found, exit the loop (local optimum reached)
-                improvement_attempts -= 1
-            
-            # Increment the iteration counter
-            iteration += 1
-
+            # We check if the found solution is better than our best
+            if current_makespan < best_makespan:
+                best_solution = current_solution
+                best_makespan = current_makespan
+                        
         # Apply the best solution to update the scheduler and return it
         self.compute_makespan(*best_solution)
         return best_solution, best_makespan
         
     # Tabu search which generates random solutions and the picks the better ones that are not in the tabu list (forbidden list)
     # In this function we check the moves only by the operation sequence, we don't check the difference for the machines, to consume less time
-    def tabu_search(self, 
-                    initial_solution: Tuple[List[int], List[List[int]]], 
+    def tabu_search(self,
                     tabu_tenure: int = config.tabu_search.tabu_tenure, 
                     max_iterations: int = config.tabu_search.max_iterations
                     ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
         
-        current_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(initial_solution)   # This is the current encoded solution
+        current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
         current_makespan: int = self.compute_makespan(*current_solution)                        # We calculate the current makespan
         best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)      # Keeping the best solution
         best_makespan: int = current_makespan                                                   # Keeping the best makespan for the best solution
@@ -579,29 +575,69 @@ class Scheduler:
                 best_solution_index = ind
 
         # Return the best one as a parent
-        return copy.deepcopy(population[best_solution_index])   
+        return copy.deepcopy(population[best_solution_index])
+    
+    
+    # Here we implement the Iterated Local Search
+    def iterated_local_search(self,
+                    max_iterations: int = config.iterated_local_search.max_iterations,
+                    perturbation_strength: int = config.iterated_local_search.perturbation_strength
+                    ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
+        
+         # Start with a deep copy of the initial solution to avoid modifying the input
+        current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
+        current_makespan: int = self.compute_makespan(*current_solution)    # Compute the makespan of the current solution
+        # Initialize the best solution and its makespan 
+        best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)
+        best_makespan: int = current_makespan
+        
+        
+        for i in range(max_iterations):
+            # Here we begin the local search
+            improved = config.iterated_local_search.improvement_tries # We'll give more chances for improvement
+            while improved > 0:
+                neighbour = self.generate_neighbor(current_solution)
+                neighbour_makespan = self.compute_makespan(*neighbour)
+                if neighbour_makespan < current_makespan:
+                    current_solution = copy.deepcopy(neighbour)
+                    current_makespan = neighbour_makespan
+                    if neighbour_makespan < best_makespan:
+                        best_solution = copy.deepcopy(neighbour)
+                        best_makespan = neighbour_makespan
+                    improved = config.iterated_local_search.improvement_tries
+                else:
+                    improved -= 1
 
+            # Perturbation step
+            for i in range(perturbation_strength):
+                current_solution = self.generate_neighbor(current_solution)
+            current_makespan = self.compute_makespan(*current_solution)
+
+        # Apply the best solution and return
+        self.compute_makespan(*best_solution)
+        return best_solution, best_makespan
+    
 
 
     def run(self, heuristic: str) -> None:
         # Executes the scheduling process based on the chosen heuristic
         if heuristic == "SA":
             # Use Simulated Annealing to optimize the schedule
-            initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
-            best_solution, best_makespan = self.simulated_annealing(initial_solution)
+            best_solution, best_makespan = self.simulated_annealing()
             return
         elif heuristic == "HC":
             # Generate an initial solution for Hill Climbing
-            initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
-            best_solution, best_makespan = self.hill_climbing(initial_solution)
+            best_solution, best_makespan = self.hill_climbing()
             return
         elif heuristic == "TS":
             # Generate an initial solution for Tabu Search
-            initial_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
-            best_solution, best_makespan = self.tabu_search(initial_solution)
+            best_solution, best_makespan = self.tabu_search()
             return
         elif heuristic == "GA":
             best_solution, best_makespan = self.genetic_algorithm()
+            return
+        elif heuristic == "ILS":
+            best_solution, best_makespan = self.iterated_local_search()
             return
 
         # Use dispatching rules for non heuristics
@@ -679,9 +715,9 @@ class Scheduler:
             print(value)
             print()
 
-# -------------------------------
-# Helper Functions
-# -------------------------------
+########################
+### Helper Functions ###
+########################
 
 def run_gannt_chart(heuristic: str, scheduler: Scheduler, heuristic_names: Dict):
     scheduler.run(heuristic)
@@ -767,9 +803,9 @@ def save_chart_results(heuristic: str, nr_iterations: int, optimal_result: int, 
     plt.close()
     print(f'Plot with {nr_iterations} iterations for {heuristic_names[heuristic]} saved.')
 
-# ---------------------------------
-# Data Reading and object creation
-# ---------------------------------
+########################################
+### Data Reading and object creation ###
+########################################
 
 #read from file
 allJobs: List[Job] = []  # Will contain all the jobs with their tasks
@@ -879,17 +915,18 @@ heuristic_names = {
     'SA'    : 'Simulated Annealing',
     'HC'    : 'Hill Climber',
     'TS'    : 'Tabu Search',
-    'GA'    : 'Genetic Algorithm'
+    'GA'    : 'Genetic Algorithm',
+    'ILS'   : 'Iterated Local Search'
 }
 
-# -------------------------------
-# Main Execution and Visualization
-# -------------------------------
+########################################
+### Main Execution and Visualization ###
+########################################
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['SA', 'HC', 'TS', 'GA']:
-    save_chart_results(heuristic, 50, 40, scheduler, heuristic_names)
+for heuristic in ['SA', 'HC', 'TS', 'GA', 'ILS']:
+    run_gannt_chart(heuristic, scheduler, heuristic_names)
 
 
 #scheduler.display_work_remaining_arrays()
