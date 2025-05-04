@@ -1,15 +1,16 @@
 {
   "simulated_annealing": {
     "initial_temperature": 1000,
-    "cooling_rate": 0.95,
+    "cooling_rate": 0.90,
     "min_temperature": 1,
-    "max_iterations": 10000
+    "max_iterations": 5000,
+    "restarts": 20
   },
   "hill_climbing": {
     "max_iterations": 1000,
     "improvement_tries": 100,
-    "restarts": 3,
-    "neighbors_number": 5
+    "restarts": 5,
+    "neighbors_number": 10
   },
   "tabu_search": {
     "tabu_tenure": 7,
@@ -20,11 +21,11 @@
     "num_generations": 90,
     "crossover_rate": 0.7,
     "mutation_rate": 0.15,
-    "tournament_size": 3
+    "tournament_size": 25
   },
   "iterated_local_search": {
-    "max_iterations": 500,
-    "perturbation_strength": 5,
-    "improvement_tries": 25
+    "max_iterations": 200,
+    "perturbation_strength": 4,
+    "improvement_tries": 40
   }
 }

@@ -4,6 +4,7 @@ class SimulatedAnnealingConfig:
     cooling_rate: float
     min_temperature: float
     max_iterations: int
+    restarts: int
 
 class HillClimbingConfig:
     max_iterations: int

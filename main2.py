@@ -305,32 +305,38 @@ class Scheduler:
                             initial_temperature: float = config.simulated_annealing.initial_temperature, 
                             cooling_rate: float = config.simulated_annealing.cooling_rate, 
                             min_temperature: float = config.simulated_annealing.min_temperature, 
-                            max_iterations: int = config.simulated_annealing.max_iterations
+                            max_iterations: int = config.simulated_annealing.max_iterations,
+                            restarts: int = config.simulated_annealing.restarts
                             ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
                             
         # Optimizes the schedule using Simulated Annealing
-        current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
-        current_makespan: int = self.compute_makespan(current_solution[0], current_solution[1])             # Evaluate it
-        best_solution: Tuple[List[int], List[List[int]]] = current_solution                                 # Track the best solution found
-        best_makespan: int = current_makespan    # Track its makespan
-        temperature: int = initial_temperature   # Start with a high temperature
-        iteration: int = 0                       # Count iterations
 
-        # We continue until temperature is low enough or max iterations reached
-        while temperature > min_temperature and iteration < max_iterations:
-            neighbor: Tuple[List[int], List[List[int]]] = self.generate_neighbor(current_solution)     # Create a new solution
-            neighbor_makespan: int = self.compute_makespan(*neighbor)    # Evaluate it
-            delta_E: int = neighbor_makespan - current_makespan          # Change in makespan
-            # Accept if better (negative delta) or with probability if worse
-            if delta_E < 0 or random.random() < math.exp(-delta_E / (temperature * current_makespan)):  
-                current_solution = neighbor
-                current_makespan = neighbor_makespan
-                # Update best solution if this one is better
-                if current_makespan < best_makespan:
-                    best_solution = current_solution
-                    best_makespan = current_makespan
-            temperature *= cooling_rate  # Cool down the temperature    
-            iteration += 1               # Increment iteration counter
+        best_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()     # Track the best solution found
+        best_makespan: int = self.compute_makespan(*best_solution)                              # Track its makespan
+
+        for i in range(restarts):
+            current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
+            current_makespan: int = self.compute_makespan(current_solution[0], current_solution[1])             # Evaluate it
+            temperature: int = initial_temperature   # Start with a high temperature
+            iteration: int = 0                       # Count iterations
+
+            # We continue until temperature is low enough or max iterations reached
+            while temperature > min_temperature and iteration < max_iterations:
+                neighbor: Tuple[List[int], List[List[int]]] = self.generate_neighbor(current_solution)     # Create a new solution
+                neighbor_makespan: int = self.compute_makespan(*neighbor)    # Evaluate it
+                delta_E: int = neighbor_makespan - current_makespan          # Change in makespan
+                # Accept if better (negative delta) or with probability if worse
+                if delta_E < 0 or random.random() < math.exp(-delta_E / (temperature * current_makespan)):  
+                    current_solution = neighbor
+                    current_makespan = neighbor_makespan
+                    # Update best solution if this one is better
+                    if current_makespan < best_makespan:
+                        best_solution = current_solution
+                        best_makespan = current_makespan
+                temperature *= cooling_rate  # Cool down the temperature    
+                iteration += 1               # Increment iteration counter
+        
+
         self.compute_makespan(*best_solution)  # Apply the best solution
         return best_solution, best_makespan    # Return the optimized solution and its makespan
 
@@ -608,10 +614,15 @@ class Scheduler:
                 else:
                     improved -= 1
 
+            pertubed_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)
             # Perturbation step
             for i in range(perturbation_strength):
-                current_solution = self.generate_neighbor(current_solution)
-            current_makespan = self.compute_makespan(*current_solution)
+                pertubed_solution = self.generate_neighbor(pertubed_solution)
+            pertubed_solution_makespan: int = self.compute_makespan(*pertubed_solution)
+            # Check acceptance of perturbation
+            if pertubed_solution_makespan < current_makespan:
+                current_solution = copy.deepcopy(pertubed_solution)
+                current_makespan = pertubed_solution_makespan
 
         # Apply the best solution and return
         self.compute_makespan(*best_solution)
@@ -926,7 +937,11 @@ heuristic_names = {
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
 for heuristic in ['SA', 'HC', 'TS', 'GA', 'ILS']:
-    run_gannt_chart(heuristic, scheduler, heuristic_names)
+    save_chart_results(heuristic, 10, 101, scheduler, heuristic_names)
 
 
 #scheduler.display_work_remaining_arrays()
+
+####### To do #######
+# Maybe keep more best solutions in GA, but may require performance
+# Maybe make the generate initial solution first from MWR and the shuffle a bit
