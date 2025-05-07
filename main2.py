@@ -228,6 +228,58 @@ class Scheduler:
 
         return operation_sequence, machine_assignment               # Return both of them, the solution and associated machines
     
+    # Will generate a starting solution based on a dispatching rule
+    def generate_dispaching_inititial_solution(self, rule: str) -> Tuple[List[int], List[List[int]]]:
+        operation_sequence: List[int] = []  # # Will keep the order of the operations for the jobs
+        
+        machine_assignment: List[List[int]] = []    # A 2D list where machine_assignment[job_id][operation_index] gives the machine ID for that operation.
+                                                    # ex: [[0, 2], [1, 1, 0], [3]] Job 0: Operation 0 on Machine 0, Operation 1 on Machine 2 ...
+        
+        # We make sure to fulfil the list with the needed job size
+        for i in range(len(self.jobs)):
+            machine_assignment.append([])
+
+        # Here is the code we use in the run() method, we just remember the operations and machines
+        while any(not job.is_complete() for job in self.jobs): # do until all the jobs are completed
+            # Get all available tasks sorted by the chosen heuristic
+            if(rule == 'SPT'):
+                next_task_tuple: Optional[Tuple[Job, Task]] = self.shortest_processing_time()   # format: (job, task)
+            elif rule == 'LPT':
+                next_task_tuple: Optional[Tuple[Job, Task]] = self.longest_processing_time()    # format: (job, task)
+            elif rule == 'MWR':
+                next_task_tuple: Optional[Tuple[Job, Task]] = self.most_work_remaining()        # format: (job, task)
+            elif rule == 'LWR':
+                next_task_tuple: Optional[Tuple[Job, Task]] = self.least_work_remaining()       # format: (job, task)
+            else:
+                raise ValueError(f"Unknown heuristic: {rule}")
+            
+            if next_task_tuple:
+                job, task = next_task_tuple
+
+                # Here we add the data from the dispatching rule in the needed format
+                operation_sequence.append(job.job_id)
+                machine_assignment[job.job_id].append(task.machine_id)
+
+                machine: Machine = self.machines[task.machine_id]
+                # Schedule the task at the earliest possible time for this machine
+                start = machine.schedule[-1][2] if machine.schedule else 0  # Get the end time of the last machine's task or make it 0
+
+                # Now we pick the max between the possible start time of the machine computed above and the possible start time of the job (the possible
+                #   start time of the job is more or equal to when it's previous operation ended) because we need to satisfy both conditions
+                start = max(start, job.last_ending_time)
+
+                end = start + task.duration                                 # Calculate the end time
+                machine.add_to_schedule(job.job_id, start, end)             # Add the task to needed machine's schedule
+                task.start_time = start                                     # Update Task's start time
+                task.end_time = end                                         # Update Task's end time
+                self.global_max = max(self.global_max, end)                 # Update global makespan if needed
+                job.last_ending_time = task.end_time                        # Update the job's last ending time
+                job.complete_operation()                                    # Mark the task as done
+
+        # Here we reset the scheduler and return the result
+        self.reset_scheduler()
+        return operation_sequence, machine_assignment
+        
 
     # Will compute the makespan for the encoded operations array and machine assignments and it also updates the scheduler with the computed solution
     def compute_makespan(self, operation_sequence: List[int], machine_assignment: List[List[int]]) -> int:
@@ -936,8 +988,8 @@ heuristic_names = {
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['SA', 'HC', 'TS', 'GA', 'ILS']:
-    save_chart_results(heuristic, 10, 101, scheduler, heuristic_names)
+for heuristic in ['ILS']:
+    save_chart_results(heuristic, 50, 663, scheduler, heuristic_names)
 
 
 #scheduler.display_work_remaining_arrays()
