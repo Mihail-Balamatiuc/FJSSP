@@ -324,7 +324,7 @@ class Scheduler:
     def generate_neighbor(self, solution: Tuple[List[int], List[List[int]]]) -> Tuple[List[int], List[List[int]]]:
         operation_sequence, machine_assignment = copy.deepcopy(solution)   # We separate the operation sequence and the maachines assigned
         # Here we will decide if we swap two operations in the sequence or if we pick a different machine and task for a opperation
-        if random.random() < 0.5:
+        if random.random() < config.global_configs.operation_machine_ratio:
             # Option 1: Swap two operations in the sequence
             new_sequence: List[int] = operation_sequence.copy()    # We make a copy of the current sequence
             i, j = random.sample(range(len(new_sequence)), 2)   # Pick two random distinct positions from the new_sequence
@@ -643,7 +643,7 @@ class Scheduler:
                     ) -> Tuple[Tuple[List[int], List[List[int]]], int]:
         
          # Start with a deep copy of the initial solution to avoid modifying the input
-        current_solution: Tuple[List[int], List[List[int]]] = self.generate_initial_solution()
+        current_solution: Tuple[List[int], List[List[int]]] = self.generate_dispaching_inititial_solution("MWR")
         current_makespan: int = self.compute_makespan(*current_solution)    # Compute the makespan of the current solution
         # Initialize the best solution and its makespan 
         best_solution: Tuple[List[int], List[List[int]]] = copy.deepcopy(current_solution)
@@ -778,6 +778,29 @@ class Scheduler:
             print(value)
             print()
 
+    # should be used only after the scheluder completed the processing
+    def get_machines_idle(self) -> List[int]:
+        idles: List[int] = []
+        for machine in self.machines:
+            idle_time: int = 0
+            # We check if we have tasks
+            if len(machine.schedule):
+                # Time before the start of the first operation
+                idle_time += machine.schedule[0][1]
+                # Time in between the operations
+                for i in range(1, len(machine.schedule)):
+                    idle_time += machine.schedule[i][1] - machine.schedule[i - 1][2]
+                # Here we add the time between the end of the last operation and the makespan(end time)
+                idle_time += self.get_makespan() - machine.schedule[-1][2]
+            # In case there are no operations executed
+            else:
+                idle_time = self.get_makespan()
+            # Add to the list
+            idles.append(idle_time)
+        return idles 
+            
+            
+
 ########################
 ### Helper Functions ###
 ########################
@@ -785,7 +808,7 @@ class Scheduler:
 def run_gannt_chart(heuristic: str, scheduler: Scheduler, heuristic_names: Dict):
     scheduler.run(heuristic)
     print(f"\nResults for {heuristic}:")
-    #scheduler.print_job_answer()
+    scheduler.print_job_answer()
     print(f'The total time is: {scheduler.get_makespan()}')
 
     ##### Here the plotting part starts #####
@@ -812,9 +835,17 @@ def run_gannt_chart(heuristic: str, scheduler: Scheduler, heuristic_names: Dict)
     # Calculate duration, adds a new 'Duration' column computed from Finish - Start from every column 
     df['Duration'] = df['Finish'] - df['Start']
 
+    # Extract machine IDs for sorting
+    df['MachineID'] = df['Machine'].str.extract('(\d+)').astype(int)
+    
+    # Get ordered list of machine names (high to low)
+    machine_order = [f"Machine{i}" for i in range(scheduler.machines[-1].machine_id, -1, -1)]
+    
     # Create Gantt-like chart with numerical ranges, this is the configuration for horizontal bars
-    fig = px.bar(df, y = "Machine", x = "Duration", base = "Start", orientation = 'h', color = "Task", 
-                custom_data = ['Task', 'Start', 'Finish', 'Duration'], title = f"Gantt Chart for {heuristic_names[heuristic]}")
+    fig = px.bar(df, y="Machine", x="Duration", base="Start", orientation='h', color="Task", 
+                custom_data=['Task', 'Start', 'Finish', 'Duration'], 
+                title=f"Gantt Chart for {heuristic_names[heuristic]}",
+                category_orders={"Machine": machine_order})  # Set the category order
     # Above we use the custom data to ensure the data is taken directly from DataFrame to solve the Duration bug present in Plotly
 
     # Here we update the hover info type for the bars
@@ -827,13 +858,20 @@ def run_gannt_chart(heuristic: str, scheduler: Scheduler, heuristic_names: Dict)
         xaxis_title="Time Units",
         yaxis_title="Machines",
         xaxis_range=[0, scheduler.get_makespan()],
-        title = f'{heuristic_names[heuristic]}'
+        title = f'{heuristic_names[heuristic]}, makespan: {scheduler.get_makespan()}'
     )
 
     # Show the chart
     fig.show()
 
     ##### Here the plotting part ends #####
+    
+    # Here we print the idle(time when they were not working) times for machines
+    machines_idle: List[int] = scheduler.get_machines_idle()
+    print(f'\nDuring {heuristic}\n')
+    for i in range(len(machines_idle)):
+        print(f'Machine {i} was idle for {machines_idle[i]} units of time')
+    print()
 
     # Here we reset the scheduler
     scheduler.reset_scheduler()
@@ -988,8 +1026,8 @@ heuristic_names = {
 
 # Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['ILS']:
-    save_chart_results(heuristic, 50, 663, scheduler, heuristic_names)
+for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS', 'GA', 'ILS']:
+    run_gannt_chart(heuristic, scheduler, heuristic_names)
 
 
 #scheduler.display_work_remaining_arrays()

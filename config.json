@@ -1,4 +1,7 @@
 {
+  "global_configs": {
+    "operation_machine_ratio": 0.5
+  },
   "simulated_annealing": {
     "initial_temperature": 1000,
     "cooling_rate": 0.90,

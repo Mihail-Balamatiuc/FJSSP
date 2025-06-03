@@ -1,4 +1,7 @@
 # Define classes to provide type hints for the config structure
+class GlobalConfigs:
+    operation_machine_ratio: float
+
 class SimulatedAnnealingConfig:
     initial_temperature: float
     cooling_rate: float
@@ -34,3 +37,4 @@ class Config:
     tabu_search: TabuSearchConfig
     genetic_algorithm: GeneticAlgorithmConfig
     iterated_local_search: IteratedLocalSearch
+    global_configs: GlobalConfigs
