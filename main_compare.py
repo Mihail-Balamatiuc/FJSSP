@@ -120,8 +120,14 @@ heuristic_names = {
 }
 
 ### Main Execution and Visualization ###
-
-# Test all heuristics
 scheduler = Scheduler(allJobs, machines)
-for heuristic in ['SPT', 'LPT', 'MWR', 'LWR', 'SA', 'HC', 'TS', 'GA', 'ILS']:
-    run_gannt_chart(heuristic, scheduler, heuristic_names)
+
+heuristics: List[str] = []
+with open('compare_algorithms.txt', 'r') as file:
+    #read by lines
+    for line in file:
+        heuristics = line.split()
+
+
+for heuristic in heuristics:
+    save_chart_results(heuristic, 5, 40, scheduler, heuristic_names)
