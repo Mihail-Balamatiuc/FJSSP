@@ -73,4 +73,8 @@ Results are saved in the `results/` directory when comparing algorithms.
 
 ## Example
 
-After running `main_schedule.py`, you'll see Gantt charts showing the schedule produced by each algorithm, along with the makespan and
+After running `main_schedule.py`, you'll see interactive Gantt charts showing the schedule produced by each algorithm, along with the makespan
+
+## FJSSP app
+
+You can use the complete FJSSP app that can be found here: [React](https://github.com/Mihail-Balamatiuc/FJSSP-React-) + [.Net](https://github.com/Mihail-Balamatiuc/FJSSP-.NET-)
