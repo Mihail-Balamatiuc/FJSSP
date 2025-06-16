@@ -130,4 +130,4 @@ with open('schedule_algorithms.txt', 'r') as file:
 
 
 for heuristic in heuristics:
-     run_gannt_chart(heuristic, scheduler, heuristic_names)
+    run_gannt_chart(heuristic, scheduler, heuristic_names)
